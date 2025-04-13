@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./image/logo.png" alt="DeepNotes Logo" width="150"> 
+  <img src="./images/logo.png" alt="DeepNotes Logo" width="150"> 
   <!-- Modifica "./assets/logo.png" con il percorso corretto del tuo logo -->
   <!-- Modifica width="150" per regolare la dimensione se necessario -->
 </p>
