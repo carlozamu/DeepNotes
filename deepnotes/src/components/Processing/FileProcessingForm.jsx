@@ -16,16 +16,21 @@ import {
   CircularProgress,
   IconButton,
   Snackbar,
-  Alert
+  Alert,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import NoteAltIcon from '@mui/icons-material/NoteAlt';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { basename } from '@tauri-apps/api/path';
+import { readTextFile } from '@tauri-apps/api/fs';
+import { open as openShell } from '@tauri-apps/api/shell';
 
 const steps = ['Seleziona file', 'Elaborazione', 'Risultato'];
 
@@ -44,6 +49,10 @@ const FileProcessingForm = () => {
   const [finalOutputPath, setFinalOutputPath] = useState(''); // Percorso del file .txt finale
   const [error, setError] = useState(''); // Messaggio di errore generale
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  
+  // Opzioni OCR
+  const [forceOcr, setForceOcr] = useState(false);
+  const [ocrLanguage, setOcrLanguage] = useState('eng'); // Default a inglese
   
   // Manteniamo questi per la compatibilità con il salvataggio delle note
   const [language, setLanguage] = useState('italiano'); 
@@ -154,14 +163,10 @@ const FileProcessingForm = () => {
       setIsProcessingPdf(true);
       showNotification(`Inizio estrazione testo PDF: ${selectedPdfFile.name}...`, 'info');
       try {
-        // TODO: Recuperare forceOcr e ocrLang dall'UI se li implementiamo
-        const forceOcr = false; // Placeholder
-        const ocrLang = 'eng'; // Placeholder
-
         const pdfResult = await invoke('process_pdf_command', {
           pdfPath: selectedPdfFile.path,
-          forceOcr: forceOcr,
-          ocrLang: ocrLang,
+          forceOcr: forceOcr,  // Usa lo stato
+          ocrLang: ocrLanguage, // Usa lo stato
         });
         currentPdfText = pdfResult; // Salva risultato intermedio
         setPdfText(pdfResult); // Aggiorna stato per UI
@@ -220,39 +225,67 @@ const FileProcessingForm = () => {
     setSummary('');
   };
 
-  // Manteniamo la funzione esistente per salvare il risultato come nota
-  const saveAsNote = () => {
-    if (!finalOutputPath) return;
-    
-    // Recupera le note esistenti o inizializza un array vuoto
-    const savedNotes = localStorage.getItem('deepnotes_notes');
-    const notes = savedNotes ? JSON.parse(savedNotes) : [];
-    
-    // Crea una nuova nota
-    const newNote = {
-      id: Date.now().toString(),
-      title: selectedVideoFile 
-        ? `${selectedVideoFile.name} - ${noteStyle}` 
-        : selectedPdfFile 
-          ? `${selectedPdfFile.name} - ${noteStyle}`
-          : `Nota ${new Date().toLocaleString()}`,
-      content: summary,
-      tags: [noteStyle, language],
-      date: new Date().toISOString(),
-    };
-    
-    // Aggiunge la nuova nota all'array
-    notes.push(newNote);
-    
-    // Salva nel localStorage
-    localStorage.setItem('deepnotes_notes', JSON.stringify(notes));
-    
-    // Mostra una notifica
-    setNotification({
-      open: true,
-      message: 'Nota salvata con successo',
-      severity: 'success'
-    });
+  const handleSaveGeneratedNote = async () => {
+    if (!finalOutputPath) {
+      showNotification("Nessun file di output da salvare come nota.", "warning");
+      return;
+    }
+
+    showNotification("Lettura del file di output...", "info");
+    try {
+      // Leggi il contenuto del file generato usando l'API Tauri FS
+      const generatedContent = await readTextFile(finalOutputPath);
+
+      if (!generatedContent) {
+        showNotification("Il file di output è vuoto o illeggibile.", "error");
+        return;
+      }
+
+      // Recupera le note esistenti o inizializza un array vuoto
+      const savedNotes = localStorage.getItem('deepnotes_notes');
+      const notes = savedNotes ? JSON.parse(savedNotes) : [];
+
+      // Crea una nuova nota con il contenuto letto
+      const newNote = {
+        id: Date.now().toString(),
+        // Titolo più significativo basato sui file originali
+        title: `Nota da ${selectedVideoFile?.name ?? ''}${selectedVideoFile && selectedPdfFile ? ' e ' : ''}${selectedPdfFile?.name ?? ''}`.replace("Nota da ", "Nota da").trim() || `Nota generata ${new Date().toLocaleDateString()}`,
+        content: generatedContent, // Usa il contenuto letto dal file
+        // Potremmo estrarre tag dal contenuto o usare quelli di configurazione
+        tags: [ocrLanguage, (selectedVideoFile ? 'video' : ''), (selectedPdfFile ? 'pdf' : '')].filter(Boolean),
+        date: new Date().toISOString(),
+      };
+
+      // Aggiunge la nuova nota all'array
+      notes.push(newNote);
+
+      // Salva nel localStorage
+      localStorage.setItem('deepnotes_notes', JSON.stringify(notes));
+
+      // Mostra una notifica di successo
+      showNotification('Nota salvata con successo dalla generazione!', 'success');
+
+    } catch (err) {
+      console.error("Errore lettura/salvataggio nota:", err);
+      setError(`Errore nel salvare la nota: ${err}`);
+      showNotification(`Errore nel salvare la nota: ${err}`, 'error');
+    }
+  };
+
+  const handleOpenFile = async () => {
+    if (!finalOutputPath) {
+        showNotification("Nessun file di output da aprire.", "warning");
+        return;
+    }
+    try {
+        // Usa l'API shell di Tauri per aprire il file con l'applicazione predefinita
+        await openShell(finalOutputPath);
+        showNotification(`Tentativo di aprire: ${finalOutputPath}`, 'info');
+    } catch (err) {
+        console.error("Errore apertura file:", err);
+        setError(`Impossibile aprire il file: ${err}`);
+        showNotification(`Impossibile aprire il file: ${err}`, 'error');
+    }
   };
 
   const renderStepContent = (step) => {
@@ -305,6 +338,39 @@ const FileProcessingForm = () => {
                 )}
               </Box>
             </Box>
+
+            {/* Opzioni PDF (mostra solo se un PDF è selezionato) */}
+            {selectedPdfFile && (
+              <Box sx={{ mt: 2, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'left' }}>
+                <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>Opzioni PDF:</Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={forceOcr}
+                      onChange={(e) => setForceOcr(e.target.checked)}
+                      size="small"
+                    />
+                  }
+                  label="Forza OCR (ignora estrazione diretta)"
+                />
+                <FormControl size="small" sx={{ minWidth: 120, ml: 2 }}>
+                  <InputLabel id="ocr-lang-label">Lingua OCR</InputLabel>
+                  <Select
+                    labelId="ocr-lang-label"
+                    value={ocrLanguage}
+                    label="Lingua OCR"
+                    onChange={(e) => setOcrLanguage(e.target.value)}
+                  >
+                    <MenuItem value={'eng'}>Inglese (eng)</MenuItem>
+                    <MenuItem value={'ita'}>Italiano (ita)</MenuItem>
+                    <MenuItem value={'fra'}>Francese (fra)</MenuItem>
+                    <MenuItem value={'deu'}>Tedesco (deu)</MenuItem>
+                    <MenuItem value={'spa'}>Spagnolo (spa)</MenuItem>
+                    {/* Aggiungere altre lingue se Tesseract le supporta */}
+                  </Select>
+                </FormControl>
+              </Box>
+            )}
 
             <Divider sx={{ my: 2 }}/>
 
@@ -360,7 +426,6 @@ const FileProcessingForm = () => {
               <Typography paragraph>
                 Le note sono state generate e salvate in: <br/>
                 <code>{finalOutputPath}</code>
-                {/* TODO: Aggiungere un bottone per aprire la cartella/file */}
               </Typography>
             ) : (
               <Typography paragraph color="warning.main">
@@ -368,34 +433,33 @@ const FileProcessingForm = () => {
               </Typography>
             )}
 
-            <TextField
-              fullWidth
-              multiline
-              rows={6}
-              value={summary}
-              disabled
-              variant="outlined"
-              sx={{ mb: 3 }}
-            />
-
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Button 
-                variant="outlined" 
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 3 }}>
+              <Button
+                variant="outlined"
                 onClick={handleReset}
               >
-                Elabora un altro file
+                Elabora Nuovi File
               </Button>
-              <Button 
-                variant="contained" 
+              <Button
+                variant="contained"
                 color="primary"
-                startIcon={<SaveIcon />} 
-                onClick={saveAsNote}
+                startIcon={<SaveIcon />}
+                onClick={handleSaveGeneratedNote} // Chiama la nuova funzione
                 disabled={!finalOutputPath}
               >
                 Salva come nota
               </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<FolderOpenIcon />}
+                onClick={handleOpenFile} // Chiama la nuova funzione
+                disabled={!finalOutputPath}
+              >
+                Apri File Generato
+              </Button>
             </Box>
-            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+            {error && <Alert severity="error" sx={{ mt: 2, textAlign: 'left' }}>{error}</Alert>}
           </Box>
         );
       default:
