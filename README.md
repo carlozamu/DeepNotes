@@ -1,10 +1,52 @@
-<p align="center">
-  <img src="./images/logo.png" alt="DeepNotes Logo" width="150"> 
-  <!-- Modifica "./assets/logo.png" con il percorso corretto del tuo logo -->
-  <!-- Modifica width="150" per regolare la dimensione se necessario -->
-</p>
-
 # DeepNotes
+
+<img src="./assets/logo.png" alt="DeepNotes Logo" width="120" />
+
+DeepNotes is a desktop application for taking and managing notes with advanced features.
+
+## Project Structure
+
+```
+deepnotes/
+├── assets/              # Images and assets
+│   └── logo.png
+├── output/              # Generated text files
+├── python-backend/      # Python backend services
+├── src/                 # React frontend code
+├── src-tauri/           # Tauri/Rust code
+└── ... (other configuration files)
+```
+
+## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v16+)
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Tauri CLI](https://tauri.app/v1/guides/getting-started/setup)
+
+### Setup
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start the development server:
+   ```bash
+   npm run tauri dev
+   ```
+
+### Building
+
+Build the application:
+```bash
+npm run tauri build
+```
+
+## License
+
+See the LICENSE file for details.
 
 ## 1. Overview & Objectives
 - **Primary Objective:**

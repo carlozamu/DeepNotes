@@ -1,0 +1,11 @@
+dearpygui
+ffmpeg-python
+faster-whisper
+PyMuPDF
+# pytesseract - Rimosso in favore di Mistral AI OCR
+# Pillow - Rimosso in favore di Mistral AI OCR
+google-generativeai
+requests
+pyperclip
+mistralai
+# Eventuali altre dipendenze verranno aggiunte in seguito
